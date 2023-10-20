@@ -245,6 +245,17 @@ export default function Home() {
                   >
                     🥔 {msg.potatoUsers ? msg.potatoUsers.length : 0}
                   </button>
+                  <button
+                    className={`reaction-button stonehenge-button ${
+                      msg.stoneHengeUsers &&
+                      msg.stoneHengeUsers.includes(user.uid)
+                        ? "clicked"
+                        : ""
+                    }`}
+                    onClick={() => toggleReaction("stoneHenge", index)}
+                  >
+                    🗿 {msg.stoneHengeUsers ? msg.stoneHengeUsers.length : 0}
+                  </button>
                 </div>
               </div>
             ))}
