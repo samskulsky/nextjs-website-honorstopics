@@ -1,9 +1,7 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { db, auth, googleAuthProvider } from "./firebaseClient";
-import { signInWithPopup, signOut as signOutFromFirebase } from "firebase/auth";
 import {
   collection,
   addDoc,
@@ -16,6 +14,8 @@ import {
   doc,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
+import { signInWithPopup, signOut as signOutFromFirebase } from "firebase/auth";
+import { db, auth, googleAuthProvider } from "./firebaseClient";
 
 export default function Home() {
   const [user, setUser] = useState(null);
@@ -24,43 +24,42 @@ export default function Home() {
   const messagesEndRef = useRef(null);
   const [prevMessageCount, setPrevMessageCount] = useState(0);
 
+  const [lastSentMessage, setLastSentMessage] = useState("");
+  const [lastSentMessageTime, setLastSentMessageTime] = useState(0);
+  const [messageSending, setMessageSending] = useState(false); // Add a state variable to control message sending
+
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const chatInputRef = useRef(null);
 
-  useEffect(() => {
-    if (auth) {
-      onAuthStateChanged(auth, (user) => {
-        if (user) {
-          setUser(user);
-
-          const messagesCollection = collection(db, "messages");
-          const q = query(messagesCollection, orderBy("createdAt"));
-
-          const unsubscribe = onSnapshot(q, (snapshot) => {
-            setMessages(
-              snapshot.docs.map((doc) => {
-                const data = doc.data();
-                const createdAt = data.createdAt
-                  ? data.createdAt.toDate().toLocaleString()
-                  : "";
-                return { ...data, createdAt };
-              })
-            );
-          });
-
-          return () => unsubscribe();
-        } else {
-          setUser(null);
-        }
-      });
-    }
-  }, [auth]);
-
+  // Declare scrollToBottom function here
   const scrollToBottom = () => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   };
+
+  // Use the scrollToBottom function
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (chatInputRef.current) {
+        const windowHeight = window.innerHeight;
+        const inputBottom = chatInputRef.current.getBoundingClientRect().bottom;
+        const heightDiff = windowHeight - inputBottom;
+
+        setIsKeyboardOpen(heightDiff < 0);
+      }
+    };
+
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
 
   useEffect(() => {
     if (messages.length > prevMessageCount) {
@@ -99,14 +98,54 @@ export default function Home() {
     signOutFromFirebase(auth);
   };
 
-  const sendMessage = async () => {
-    if (message.trim().length === 0) return;
+  const sendJoinMessage = async () => {
+    const displayName = user.displayName;
+    const joinMessage = `${displayName} has joined.`;
 
     const messagesCollection = collection(db, "messages");
 
-    // Generate a unique ID for the message using uuidv4()
-    const messageId = uuidv4();
+    await addDoc(messagesCollection, {
+      text: joinMessage,
+      createdAt: serverTimestamp(),
+      uid: user.uid,
+      displayName: "System",
+    });
+  };
 
+  const sendSystemMessage = async (text) => {
+    // Get the last message
+    const lastMessage = messages[messages.length - 1];
+
+    // Check if the last message has the same text as the new system message
+    if (lastMessage && lastMessage.text === text) {
+      return; // Do not send the system message if it's the same as the last one
+    }
+
+    const messagesCollection = collection(db, "messages");
+    const messageId = uuidv4();
+    const messageDocRef = doc(messagesCollection, messageId);
+
+    try {
+      await setDoc(messageDocRef, {
+        text,
+        createdAt: serverTimestamp(),
+        id: messageId,
+        uid: null,
+        displayName: "System",
+        heartUsers: [],
+      });
+    } catch (error) {
+      console.error("Error adding system message document:", error);
+    }
+  };
+
+  const sendMessage = async () => {
+    if (message.trim().length === 0 || messageSending) return; // Check if a message is already being sent
+
+    setMessageSending(true); // Set messageSending to true
+
+    const messagesCollection = collection(db, "messages");
+    const messageId = uuidv4();
     const messageDocRef = doc(messagesCollection, messageId);
 
     try {
@@ -122,6 +161,9 @@ export default function Home() {
     }
 
     setMessage("");
+    setTimeout(() => {
+      setMessageSending(false); // After 500 milliseconds, set messageSending back to false
+    }, 500);
   };
 
   const handleKeyPress = (event) => {
@@ -179,86 +221,104 @@ export default function Home() {
           </button>
 
           <div className="messages">
-            {messages.map((msg, index) => (
-              <div className="message" key={message.id}>
-                <div className="timestamp">{msg.createdAt}</div>
-                <div className="username">{msg.displayName}</div>
-                <div className="text">{msg.text}</div>
-                <div className="reactions">
-                  <button
-                    className={`reaction-button heart-button ${
-                      msg.heartUsers && msg.heartUsers.includes(user.uid)
-                        ? "clicked"
-                        : ""
-                    }`}
-                    onClick={() => toggleReaction("heart", index)}
+            {messages.map((msg, index) => {
+              if (msg.text.startsWith(":") || msg.uid === null) {
+                return (
+                  <div
+                    className={`message ${msg.uid ? "" : "system-message"}`}
+                    key={msg.id}
                   >
-                    ❤️ {msg.heartUsers ? msg.heartUsers.length : 0}
-                  </button>
-                  <button
-                    className={`reaction-button like-button ${
-                      msg.likeUsers && msg.likeUsers.includes(user.uid)
-                        ? "clicked"
-                        : ""
-                    }`}
-                    onClick={() => toggleReaction("like", index)}
-                  >
-                    👍 {msg.likeUsers ? msg.likeUsers.length : 0}
-                  </button>
-                  <button
-                    className={`reaction-button dislike-button ${
-                      msg.dislikeUsers && msg.dislikeUsers.includes(user.uid)
-                        ? "clicked"
-                        : ""
-                    }`}
-                    onClick={() => toggleReaction("dislike", index)}
-                  >
-                    👎 {msg.dislikeUsers ? msg.dislikeUsers.length : 0}
-                  </button>
-                  <button
-                    className={`reaction-button laugh-button ${
-                      msg.laughUsers && msg.laughUsers.includes(user.uid)
-                        ? "clicked"
-                        : ""
-                    }`}
-                    onClick={() => toggleReaction("laugh", index)}
-                  >
-                    😂 {msg.laughUsers ? msg.laughUsers.length : 0}
-                  </button>
-                  <button
-                    className={`reaction-button shit-button ${
-                      msg.shitUsers && msg.shitUsers.includes(user.uid)
-                        ? "clicked"
-                        : ""
-                    }`}
-                    onClick={() => toggleReaction("shit", index)}
-                  >
-                    💩 {msg.shitUsers ? msg.shitUsers.length : 0}
-                  </button>
-                  <button
-                    className={`reaction-button potato-button ${
-                      msg.potatoUsers && msg.potatoUsers.includes(user.uid)
-                        ? "clicked"
-                        : ""
-                    }`}
-                    onClick={() => toggleReaction("potato", index)}
-                  >
-                    🥔 {msg.potatoUsers ? msg.potatoUsers.length : 0}
-                  </button>
-                  <button
-                    className={`reaction-button stonehenge-button ${
-                      msg.stoneHengeUsers &&
-                      msg.stoneHengeUsers.includes(user.uid)
-                        ? "clicked"
-                        : ""
-                    }`}
-                    onClick={() => toggleReaction("stoneHenge", index)}
-                  >
-                    🗿 {msg.stoneHengeUsers ? msg.stoneHengeUsers.length : 0}
-                  </button>
+                    {" "}
+                    <div className="timestamp">{msg.createdAt}</div>
+                    <div className="text2">{msg.text}</div>
+                  </div>
+                );
+              }
+              return (
+                <div
+                  className={`message ${msg.uid ? "" : "system-message"}`}
+                  key={msg.id}
+                >
+                  {" "}
+                  <div className="timestamp">{msg.createdAt}</div>
+                  <div className="username">{msg.displayName}</div>
+                  <div className="text">{msg.text}</div>
+                  <div className="reactions">
+                    <button
+                      className={`reaction-button heart-button ${
+                        msg.heartUsers && msg.heartUsers.includes(user.uid)
+                          ? "clicked"
+                          : ""
+                      }`}
+                      onClick={() => toggleReaction("heart", index)}
+                    >
+                      ❤️ {msg.heartUsers ? msg.heartUsers.length : 0}
+                    </button>
+                    <button
+                      className={`reaction-button like-button ${
+                        msg.likeUsers && msg.likeUsers.includes(user.uid)
+                          ? "clicked"
+                          : ""
+                      }`}
+                      onClick={() => toggleReaction("like", index)}
+                    >
+                      👍 {msg.likeUsers ? msg.likeUsers.length : 0}
+                    </button>
+                    <button
+                      className={`reaction-button dislike-button ${
+                        msg.dislikeUsers && msg.dislikeUsers.includes(user.uid)
+                          ? "clicked"
+                          : ""
+                      }`}
+                      onClick={() => toggleReaction("dislike", index)}
+                    >
+                      👎 {msg.dislikeUsers ? msg.dislikeUsers.length : 0}
+                    </button>
+                    <button
+                      className={`reaction-button laugh-button ${
+                        msg.laughUsers && msg.laughUsers.includes(user.uid)
+                          ? "clicked"
+                          : ""
+                      }`}
+                      onClick={() => toggleReaction("laugh", index)}
+                    >
+                      😂 {msg.laughUsers ? msg.laughUsers.length : 0}
+                    </button>
+                    <button
+                      className={`reaction-button shit-button ${
+                        msg.shitUsers && msg.shitUsers.includes(user.uid)
+                          ? "clicked"
+                          : ""
+                      }`}
+                      onClick={() => toggleReaction("shit", index)}
+                    >
+                      💩 {msg.shitUsers ? msg.shitUsers.length : 0}
+                    </button>
+                    <button
+                      className={`reaction-button potato-button ${
+                        msg.potatoUsers && msg.potatoUsers.includes(user.uid)
+                          ? "clicked"
+                          : ""
+                      }`}
+                      onClick={() => toggleReaction("potato", index)}
+                    >
+                      🥔 {msg.potatoUsers ? msg.potatoUsers.length : 0}
+                    </button>
+                    <button
+                      className={`reaction-button stonehenge-button ${
+                        msg.stoneHengeUsers &&
+                        msg.stoneHengeUsers.includes(user.uid)
+                          ? "clicked"
+                          : ""
+                      }`}
+                      onClick={() => toggleReaction("stoneHenge", index)}
+                    >
+                      🗿 {msg.stoneHengeUsers ? msg.stoneHengeUsers.length : 0}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             <div ref={messagesEndRef}></div>
           </div>
           <div className="input-container">

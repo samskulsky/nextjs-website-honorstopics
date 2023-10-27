@@ -36,7 +36,7 @@ body {
     max-width: 600px;
     height: 80vh;
     margin: 5% auto;
-    background-color: #444;
+    background-color: #444444;
     border-radius: 15px;
     box-shadow: 0 0 20px rgba(0, 0, 0, 0.7); /* Enhanced box shadow */
     display: flex;
@@ -52,6 +52,11 @@ body {
 }
 
 .message {
+    max-width: 90%; /* Adjust the maximum width as needed */
+    word-wrap: break-word; /* Allows text to wrap within the container */
+    background-color: #373737; /* Background color of the message bubble */
+    padding: 10px; /* Adjust the padding as needed */
+    border-radius: 10px; /* Add rounded corners for a bubble-like appearance */
     margin-bottom: 10px;
 }
 
@@ -59,6 +64,8 @@ body {
     font-size: 12px;
     color: #aaa;
 }
+
+
 
 .username {
     font-weight: bold;
@@ -68,6 +75,13 @@ body {
 .text {
     background-color: #555;
     padding: 10px;
+    border-radius: 8px;
+    margin-top: 5px;
+}
+
+.text2 {
+    background-color: #000;
+    padding: 0px;
     border-radius: 8px;
     margin-top: 5px;
 }
@@ -184,3 +198,15 @@ button:active {
     font-size: 16px;
     margin-left: 5px;
 }
+
+.message.system-message {
+    color: #fff; 
+    font-style: italic;
+    font-size:  14px; 
+    max-width: 90%; /* Adjust the maximum width as needed */
+    word-wrap: break-word; /* Allows text to wrap within the container */
+    background-color: #000;
+    padding: 10px; /* Adjust the padding as needed */
+    border-radius: 10px; /* Add rounded corners for a bubble-like appearance */
+
+  }
